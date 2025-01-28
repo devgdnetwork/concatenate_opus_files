@@ -6,9 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
-
-	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -18,37 +15,32 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	largePcmFileStat, err := largePcmFile.Stat()
+	// Split into 2 chunks
+	ByteRate := 2
+	SampleRate := 48000
+	Channels := 2
+	Seconds := 20
+	chunkSize := Seconds * Channels * SampleRate * ByteRate
+
+	file1, err := encodePcmToOpus(context.TODO(), io.LimitReader(largePcmFile, int64(chunkSize)))
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	// Split into chunks & encode in parallel
-	chunkSize := largePcmFileStat.Size() / int64(runtime.GOMAXPROCS(0))
-	chunkSize = int64(roundUpToNearestMultiple(float64(chunkSize), 4))
-
-	g, gCtx := errgroup.WithContext(context.TODO())
-	encodedOpusFiles := make([]string, runtime.GOMAXPROCS(0))
-
-	for i := range runtime.GOMAXPROCS(0) {
-		chunkSrc := io.NewSectionReader(largePcmFile, int64(i)*chunkSize, chunkSize)
-
-		g.Go(func() error {
-			encodedFilePath, err := encodePcmToOpus(gCtx, chunkSrc)
-			encodedOpusFiles[i] = encodedFilePath
-			return err
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		log.Fatalln(err)
-	}
-
-	// Concatenate chunks
-	finalOpusFile, err := concatOpusFiles(context.TODO(), encodedOpusFiles)
+	file2, err := encodePcmToOpus(context.TODO(), io.LimitReader(largePcmFile, int64(chunkSize)))
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	fmt.Println("finalOpusFile:", finalOpusFile.Name())
+	fmt.Println("Check if these play with no defects:", file1)
+	fmt.Println("file1:", file1)
+	fmt.Println("file2:", file2)
+	fmt.Println()
+
+	concatFile, err := concatOpusFiles(context.TODO(), []string{file1, file2})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	fmt.Println("concatted file:", concatFile.Name())
 }
